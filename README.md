@@ -397,12 +397,12 @@ These limitations are **intentional** for training purposes to keep the applicat
 The application demonstrates good coding practices:
 
 - Database indexes on frequently queried fields for performance
-
-
-# Testing Result 
-<img width="1843" height="1001" alt="image" src="https://github.com/user-attachments/assets/a6f3a72c-9975-404e-83e9-106177e0cf1f" />
-
 - Async/await pattern throughout for non-blocking operations
 - Entity Framework Core with eager loading (`.Include()`) to prevent N+1 query problems
 - Clean separation of concerns (Models, Services, Data, Pages)
 - Dependency injection for loose coupling and testability
+
+
+
+# Testing Result 
+<img width="1843" height="1001" alt="image" src="https://github.com/user-attachments/assets/a6f3a72c-9975-404e-83e9-106177e0cf1f" />
