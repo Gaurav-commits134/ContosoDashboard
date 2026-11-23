@@ -1,50 +1,102 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report
+Version change: unversioned scaffold → 1.0.0 (initial adoption)
+Modified principles: PRINCIPLE_1_NAME → I. Training-First Purpose;
+PRINCIPLE_2_NAME → II. Security and Authorization by Design;
+PRINCIPLE_3_NAME → III. Offline-First and Replaceable Infrastructure;
+PRINCIPLE_4_NAME → IV. Simple, Layered Architecture;
+PRINCIPLE_5_NAME → V. Verifiable Quality
+Added sections: Project Constraints; Development Workflow and Quality Gates
+Removed sections: none
+Follow-up TODOs: none
+-->
+
+# ContosoDashboard Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Training-First Purpose
+ContosoDashboard MUST remain clearly identified as a training application. Documentation,
+interfaces, and examples MUST distinguish educational demonstrations from production-ready
+controls. Changes MUST preserve the offline training experience unless an approved feature
+specification explicitly expands that scope. Rationale: learners need an accurate picture
+of what the application demonstrates and what it does not provide.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Security and Authorization by Design
+Every feature handling identity, data, or files MUST enforce authentication and authorization
+at trusted server-side boundaries; UI visibility alone is not an access control. Access to
+user- and project-scoped data MUST be checked for the requested resource, including direct
+identifier access. Implementations MUST validate untrusted input and avoid exposing sensitive
+data or files through public paths. Training-only mock authentication MUST NOT be described
+as suitable for production. Security-sensitive behavior MUST have focused verification.
+Rationale: the project teaches security concepts while retaining explicit limits on its mock
+security model.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Offline-First and Replaceable Infrastructure
+Core application and training workflows MUST run without cloud services or internet access.
+Infrastructure that may later be replaced, such as storage or identity, MUST be isolated
+behind an interface when the abstraction has a clear use in this repository. Implementations
+MUST keep environment-specific details out of business logic and MUST NOT add mandatory
+external-service dependencies without an approved specification. Rationale: offline use is
+central to training, while narrow abstractions demonstrate practical migration seams.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. Simple, Layered Architecture
+Features MUST fit the existing ASP.NET Core, Blazor Server, and Entity Framework Core
+architecture and keep presentation, business behavior, and persistence responsibilities
+separate. Changes MUST prefer the smallest design that satisfies approved requirements;
+new layers, dependencies, and broad rewrites require a documented need. Existing conventions
+and data contracts MUST be preserved unless a specification explicitly authorizes a change.
+Rationale: a familiar, bounded structure keeps the training code approachable and maintainable.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### V. Verifiable Quality
+Each feature MUST define observable acceptance criteria and add or update automated tests for
+its important behavior. Tests MUST cover relevant authorization and data-isolation rules,
+validation failures, and integration boundaries where those behaviors change. Before merge,
+the applicable test suite and build MUST pass, or any unavailable or failing check MUST be
+reported with its impact. Documentation and specifications MUST be updated when behavior,
+constraints, or setup instructions change. Rationale: reproducible verification helps learners
+distinguish intended behavior from accidental behavior.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## Project Constraints
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+- The application MUST remain an educational, non-production project; repository guidance
+  MUST disclose known limitations, especially those involving mock authentication.
+- The default development path MUST remain local and offline-capable. A new cloud or network
+  dependency requires explicit approval in the feature specification and a usable local path
+  when it affects core training workflows.
+- Changes MUST use the repository's existing technology stack and architectural boundaries
+  unless an approved plan records why a deviation is necessary.
+- Requirements for production deployments, regulatory compliance, or production-grade
+  security MUST NOT be implied by training implementations or examples.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+## Development Workflow and Quality Gates
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+- Work MUST be described by a specification before implementation when it changes user-visible
+  behavior or introduces a substantial capability. Plans and task lists MUST remain consistent
+  with that specification.
+- Implementation MUST satisfy the acceptance criteria and MUST include regression coverage
+  for affected behavior. Security-sensitive changes MUST include checks for unauthorized access
+  and resource isolation.
+- Reviews MUST check this constitution, the feature specification, relevant tests, and updated
+  documentation. Deviations MUST be recorded with their rationale and affected scope.
+- Builds and relevant tests MUST be run before merge. If the environment prevents a check, the
+  review record MUST identify the skipped check and the reason.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+This constitution governs repository development practices and MUST be reflected in feature
+specifications, plans, implementation, and reviews. Amendments MUST be made in a reviewed
+change that explains the motivation and impact. Amendments that affect existing work MUST
+identify necessary follow-up or migration steps.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+Constitution versions use semantic versioning. A MAJOR increment marks backward-incompatible
+governance changes, including removal or redefinition of a principle. A MINOR increment marks
+a new principle or section, or materially expanded requirements. A PATCH increment marks
+clarifications, wording corrections, or other non-semantic changes.
+
+Contributors and reviewers MUST assess compliance during planning and review. A deviation is
+permitted only when the relevant specification or review documents its reason, scope, and
+mitigation; it does not silently amend this constitution. The constitution MUST be reviewed
+when a project-wide architecture, training purpose, or security boundary changes.
+
+**Version**: 1.0.0 | **Ratified**: 2026-11-23 | **Last Amended**: 2026-11-23

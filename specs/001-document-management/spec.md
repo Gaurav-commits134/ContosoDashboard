@@ -5,6 +5,12 @@
 **Status**: Draft  
 **Input**: User description: "Add document upload and management capabilities to ContosoDashboard for secure, project-aware document storage and sharing."
 
+## Clarifications
+
+### Session 2026-11-23
+
+- Q: Who may receive direct document shares? → A: Direct document shares may only be granted to users or teams already authorized to access the project.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Upload and organize work documents (Priority: P1)
@@ -49,7 +55,7 @@ A document owner or manager needs to share documents with specific users or team
 
 **Acceptance Scenarios**:
 
-1. **Given** a user owns a document or manages a project that owns it, **When** they share it with another authorized user, **Then** the recipient receives a notification and can access the document according to the sharing rules.
+1. **Given** a user owns a document or manages a project that owns it, **When** they share it directly with a user or team already authorized to access the project, **Then** the recipient receives a notification and can access the document according to the sharing rules.
 2. **Given** a document owner edits metadata or replaces the file, **When** the update is saved, **Then** the revised metadata and file version are reflected in the document details without affecting unrelated records.
 3. **Given** the user chooses to delete a document they own or are authorized to remove, **When** they confirm deletion, **Then** the document is removed permanently and the record is no longer accessible.
 
@@ -74,39 +80,45 @@ Users need document visibility in task and dashboard contexts so they can quickl
 
 - What happens when a user uploads a file with a duplicate name but a different content type?
 - How does the system handle a failed file save after metadata is prepared?
+- When file storage succeeds but database persistence fails, the system MUST attempt to delete the newly stored file and MUST NOT return a successful upload or retain a document metadata row.
+- A database cleanup or storage cleanup failure MUST be reported without reporting upload success; an orphan-cleanup retry record or log MUST be retained for operations follow-up.
 - What happens when a user without project access tries to open a document by URL?
 - How does the system behave when a user uploads a zero-byte file or a file whose extension is missing?
-- What happens when a document is shared to a user who is not a project member or does not have access rights?
+- A direct share MUST be rejected when the recipient user or team is not already authorized to access the related project.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
 - **FR-001**: System MUST allow authenticated users to upload one or more supported documents with a required title, required category, and optional description, project, and tags.
-- **FR-002**: System MUST support PDF, Microsoft Office files, text files, and common image types up to 25 MB per file.
-- **FR-003**: System MUST validate file type and size before saving and provide clear error messages for unsupported or oversized uploads.
+- **FR-002**: System MUST support PDF, Microsoft Word, Excel, and PowerPoint files, plain text, and common image types up to 25 MB per file. The approved extension/MIME pairs are: PDF (`.pdf`, `application/pdf`), Word (`.doc`, `application/msword`; `.docx`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`), Excel (`.xls`, `application/vnd.ms-excel`; `.xlsx`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`), PowerPoint (`.ppt`, `application/vnd.ms-powerpoint`; `.pptx`, `application/vnd.openxmlformats-officedocument.presentationml.presentation`), text (`.txt`, `text/plain`), PNG (`.png`, `image/png`), JPEG (`.jpg`/`.jpeg`, `image/jpeg`), and GIF (`.gif`, `image/gif`).
+- **FR-003**: System MUST validate that the file is non-zero, has a supported extension and matching approved MIME pair, and is no larger than 25 MB before saving. Browser MIME differences MUST NOT override the approved pair; missing, blank, or mismatched MIME information MUST result in a clear rejection.
 - **FR-004**: System MUST capture metadata including upload date/time, uploader, file size, MIME type, and original file extension details needed for storage and display.
 - **FR-005**: System MUST store files on the local filesystem outside the web root, using unique generated file paths to prevent path traversal and orphaned records.
 - **FR-006**: System MUST persist document metadata in the application database with an integer DocumentId and text-based category values.
 - **FR-007**: System MUST allow users to view all documents they uploaded and all project documents they are authorized to access.
 - **FR-008**: System MUST support filtering, sorting, and searching for documents by title, description, tags, uploader name, and associated project.
-- **FR-009**: System MUST enforce authorization rules so users can only access documents they own, have been shared with, or are members of the related project.
+- **FR-009**: System MUST enforce authorization rules so users can only access documents they own, have been shared with, or are members of the related project; direct shares are also limited to users or teams already authorized for that project.
 - **FR-010**: System MUST provide download access for authorized documents and preview support for common browser-viewable file types like PDF and images.
 - **FR-011**: System MUST allow document owners to edit metadata and replace the document file with a newer version when authorized.
 - **FR-012**: System MUST allow authorized users to delete documents after confirmation, with project managers able to remove documents in their projects and document owners able to remove their own uploads.
-- **FR-013**: System MUST support sharing a document with specific users and notifying them via in-app notifications.
+- **FR-013**: System MUST support sharing a project document with a specific user or existing project role/team label only when the recipient is already authorized to access the related project, and MUST notify eligible recipients via in-app notifications. A role/team share MUST resolve only to matching `ProjectMember` rows and, for an explicit project-manager role, the project manager.
 - **FR-014**: System MUST integrate document activity into project and task views, including recent document summaries and task-related document association.
+- Task association MUST use the existing optional `TaskId` field. An upload or update MUST accept `taskId` only when the task exists and belongs to the same project as the document; personal documents MUST NOT invent or accept a task association.
 - **FR-015**: System MUST track document-related actions including uploads, downloads, deletions, and share events for auditing.
 - **FR-016**: System MUST provide reporting capabilities for administrators to assess the most active uploaders, common document types, and document access patterns.
 - **FR-017**: System MUST expose a file storage abstraction interface for future cloud migration while remaining offline-capable for the current training environment.
 - **FR-018**: System MUST use a document category list that includes Project Documents, Team Resources, Personal Files, Reports, Presentations, and Other.
 - **FR-019**: System MUST ensure upload processing is safe against duplicate storage paths by generating unique file names before persisting database metadata.
 - **FR-020**: System MUST reject unauthorized or invalid upload attempts without leaving partially saved database records behind.
+- Upload persistence MUST be compensating-safe: after file storage succeeds, database metadata and its Upload audit activity MUST be saved in one database transaction. On database failure, the service MUST attempt deletion of the newly stored file and must not report success or retain document/audit metadata; if file cleanup fails, the failure and storage path MUST be recorded for cleanup retry and no success result MUST be returned.
 
 ### Key Entities *(include if feature involves data)*
 
 - **Document**: Represents a stored work file, including title, description, category, associated project, uploader, upload date, file size, MIME type, file path, and tags.
 - **DocumentShare**: Represents an explicit share relationship between a document and a user or team, along with the share event metadata and resulting access rights.
+- **DocumentActivity**: Represents a persisted, bounded audit record for upload, download, update, replace, share, and delete actions.
+- **DocumentReportSummary**: Represents a read-only reporting projection that aggregates active uploader counts, document categories/MIME types, and authorized access-pattern counts; it is derived from documents, shares, project membership, users, and DocumentActivity and is not a separate source-of-truth table.
 - **User**: Represents the authenticated dashboard user whose identity controls upload permission, ownership, and access.
 - **Project**: Represents the project context used to scope document visibility and project member collaboration.
 - **TaskItem**: Represents work tracked in the dashboard and optionally associated with documents for task-level collaboration.
@@ -118,7 +130,7 @@ Users need document visibility in task and dashboard contexts so they can quickl
 
 - **SC-001**: At least 70% of active users upload at least one document within the first three months of the feature launch.
 - **SC-002**: Users can locate a known document within 30 seconds on average using search or browsing tools.
-- **SC-003**: At least 90% of uploaded documents are categorized correctly according to the available document categories.
+- **SC-003**: In a post-launch review of at least 100 uploaded documents, at least 90% match the reviewed approved category.
 - **SC-004**: Document upload, search, and list operations complete within the required performance goals for typical training usage.
 - **SC-005**: No unauthorized document access incidents occur through project, owner, or shared-document checks.
-- **SC-006**: Users report that the upload and retrieval flow is clear and confidence-building in daily work.
+- **SC-006**: In a representative usability check with at least 5 users, at least 80% complete upload and retrieval tasks without assistance and report the flow as clear.

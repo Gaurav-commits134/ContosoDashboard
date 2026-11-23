@@ -401,3 +401,10 @@ The application demonstrates good coding practices:
 - Entity Framework Core with eager loading (`.Include()`) to prevent N+1 query problems
 - Clean separation of concerns (Models, Services, Data, Pages)
 - Dependency injection for loose coupling and testability
+
+
+
+
+# Testing Result 
+
+![alt text](image.png)
