@@ -22,7 +22,7 @@ Represents a stored file with metadata and its relationship to a project, task, 
 | UploadDate | DateTime | Captured when saved |
 | UpdatedDate | DateTime | Audited metadata updates |
 | Tags | string? | Searchable tag list |
-| IsDeleted | bool | Soft delete support for audit and recovery |
+| IsDeleted | bool | Legacy field only; approved deletion permanently removes the row and file, so production state must not rely on soft-delete recovery |
 
 ### DocumentShare
 
@@ -47,11 +47,24 @@ Represents an auditable document action.
 | Field | Type | Notes |
 |---|---|---|
 | DocumentActivityId | int | Primary key |
-| DocumentId | int | FK to Document; may be retained after soft deletion |
+| DocumentId | int? | Nullable retained document identity after permanent document-row removal |
 | ActingUserId | int | FK to User |
 | Action | string | `Upload`, `Download`, `Update`, `Replace`, `Share`, or `Delete` |
 | OccurredAt | DateTime | UTC action timestamp |
-| Details | string? | Optional bounded metadata or share target |
+| Details | string? | Optional bounded metadata, share target, or deletion context; must exclude file contents and sensitive metadata |
+
+### MalwareScanResult
+
+Read-only service contract value; not necessarily persisted as a source-of-truth entity.
+
+| Field | Type | Notes |
+|---|---|---|
+| Outcome | enum/text | `Clean`, `ThreatFound`, `Unavailable`, `Error`, or `Indeterminate` |
+| ScannerName | string | Provider-neutral configured scanner name |
+| OccurredAt | DateTime | UTC scan timestamp |
+| Details | string? | Optional bounded operational error/threat category without file content |
+
+An upload may proceed only when `Outcome` is `Clean`. `ThreatFound`, `Unavailable`, `Error`, and `Indeterminate` must reject the file and leave no file or document metadata behind.
 
 ### Notification
 
@@ -80,7 +93,7 @@ The reporting service derives this projection from `Document`, `DocumentShare`, 
 - `TaskItem` to `Document`: one-to-many, optional task association
 - `Document` to `DocumentShare`: one-to-many, explicit access grants
 - `User` to `DocumentShare`: one-to-many, recipient and actor relationships
-- `Document` to `DocumentActivity`: one-to-many, audit history
+- `Document` to `DocumentActivity`: operational audit history while the document exists; Delete activity may retain a nullable historical `DocumentId` after the document row is removed
 - `User` to `DocumentActivity`: one-to-many, actor history
 - `ProjectMember.Role` to `DocumentShare.TeamRole`: team resolution only; no standalone team entity
 
@@ -92,6 +105,9 @@ The reporting service derives this projection from `Document`, `DocumentShare`, 
 - `FileType` must support long MIME strings for Office documents.
 - `FilePath` must be generated before database insert and should be unique.
 - Access is allowed only when the document is owned by the user, explicitly shared, or associated with a project they can view.
-- `TaskId`, when present, must reference a task whose `ProjectId` equals the document's `ProjectId`.
+- `TaskId`, when present, must reference a task whose `ProjectId` equals the document's `ProjectId`. Project members and project managers may create this association only when authorized for the project.
+- A mixed-validity batch uses independent document records; each file is validated and has an individual result.
+- The scan hook outcome must be `Clean` before file storage. Unavailable or failed scans are rejection failures, not successful uploads.
+- Permanent deletion keeps only bounded `DocumentActivity`; historical `DocumentId` must not retain a relationship to a deleted Document row.
 - The same approved extension/MIME pair table used at upload and replacement is used for validation.
 - Database-save failure after file write requires compensating file deletion and must not expose an upload success.

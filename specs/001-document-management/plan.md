@@ -16,7 +16,7 @@ Complete the secure, project-aware document-management feature in the existing B
 **Target Platform**: Linux development environment; Blazor Server app deployed locally with offline support  
 **Project Type**: Web application  
 **Performance Goals**: Upload under 30 seconds for 25 MB files; document list loads under 2 seconds for 500 documents; search returns in under 2 seconds  
-**Constraints**: Offline-capable; no production authentication claims; integer `DocumentId`; text categories; 25 MB maximum; server-side authorization on every resource operation
+**Constraints**: Offline-capable; no production authentication claims; integer `DocumentId`; text categories; 25 MB maximum; server-side authorization on every resource operation; malware scanning fail closed through a replaceable local abstraction
 **Scale/Scope**: Single dashboard application used by a small internal team with project-scoped document access
 
 ## Constitution Check
@@ -103,14 +103,17 @@ ContosoDashboard/
 - Add `DocumentActivity` for upload, download, delete, share, metadata update, and file replacement events.
 - Add read-only reporting projections for uploader, category/MIME, and access-pattern summaries without introducing a persistent report table.
 - Add unique indexes for active shares and audit-friendly indexes for document activity.
-- Keep soft deletion for `Document`, with permanent physical cleanup attempted after database state is committed or explicitly designed to be compensating-safe.
+- Permanently delete the `Document` record and physical file after confirmed owner/project-manager deletion. Retain only bounded `DocumentActivity` accountability events with document identity, acting user, action, UTC timestamp, and minimal context.
 
 ### 2. Storage and file lifecycle
 
 - Keep `IFileStorageService`/`LocalFileStorageService` as the storage seam.
 - Generate a GUID-based stored name before database metadata is saved.
 - Validate against the approved extension/MIME pairs from the specification, together with non-zero size and the 25 MB limit.
+- Submit every accepted file to a provider-neutral `IMalwareScanService` abstraction before storage. Fail closed: unavailable, failed, errored, or indeterminate scan results reject the file and store neither file bytes nor document/audit metadata.
+- The MVP must not claim production-grade malware protection. A local/test implementation may be replaceable through dependency injection, but no upload may succeed without a verified scan outcome.
 - Do not accept a path supplied by the caller.
+- Process batch uploads independently. Persist each valid file and return a per-file success/failure result; do not roll back unrelated valid files when one file fails.
 - Build and save metadata only after file validation; if database save fails, delete the newly written file.
 - Write document metadata and the `Upload` audit activity in one EF Core database transaction. If the database operation fails, call storage deletion for the newly generated path; do not return success or retain metadata/audit rows. If deletion itself fails, record the orphan path and failure for cleanup retry and surface the operation failure.
 - Replacement writes the replacement first, updates metadata and audit state, then removes the old file.
@@ -124,6 +127,7 @@ ContosoDashboard/
 - Direct user shares are additional access only if that user is a member or manager of the document's project.
 - Team shares resolve a project role/team label to project members and are rejected when no authorized recipients resolve.
 - Personal documents have no project and remain owner-only; direct sharing is not offered because the clarified rule requires a related project.
+- Share notifications go to each eligible recipient. Project-document upload notifications go to project members except the uploader.
 
 ### 4. Search and retrieval
 
@@ -136,8 +140,9 @@ ContosoDashboard/
 ### 5. Dashboard, tasks, reporting
 
 - Add recent documents and document counts to the existing dashboard data/service rather than a separate dashboard subsystem.
-- Include TaskId in document associations and filter task documents through project/task authorization.
-- Add administrator reporting queries for active uploaders, MIME/category counts, and document access patterns. Reporting output must itself remain administrator-only.
+- Include the existing optional `TaskId` in document associations. Upload/update accepts it only when the task exists and its project equals the document project. Personal documents may not have task associations.
+- Add P3 administrator reporting queries for active uploaders, MIME/category counts, and document access patterns. Reporting output must remain administrator-only.
+- Keep audit/reporting independent of the P1 MVP: implement P3 after the core upload, retrieval, sharing, and task/dashboard stories.
 
 ### 6. UI
 

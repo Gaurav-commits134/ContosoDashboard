@@ -55,8 +55,33 @@ Document categories will be stored as strings rather than enums to keep the sche
 
 ## Open Question tracking
 
-- No unresolved specification question remains.
+- No unresolved specification question remains. The approved clarifications cover mixed batch behavior, task association, permanent deletion with bounded audit retention, notifications, and fail-closed local malware scanning.
 - The remaining implementation choices are bounded to the existing stack and are resolved below.
+
+## Decision 12: Process batch uploads independently
+
+Each file in a multi-file request will validate and process independently. The result set will include one success or rejection record per file so valid files are not blocked by unrelated invalid files.
+
+**Rationale**
+- Matches the approved clarification and provides clear per-file feedback.
+- Avoids partial database rollback or misleading whole-batch success.
+
+## Decision 13: Use a provider-neutral malware scan abstraction
+
+The implementation will introduce `IMalwareScanService` with a provider-neutral scan result. The application will call the hook before storage and reject unavailable, failed, or indeterminate results. The local implementation is replaceable by configuration/dependency injection.
+
+**Rationale**
+- Keeps the training application offline and does not require a mandatory external scanner.
+- Fails closed as required while preserving a migration seam.
+- Must not imply production-grade protection without a real verified scanner.
+
+## Decision 14: Keep deletion permanent and audit bounded
+
+Deletion permanently removes the document record and file after authorization and confirmation. `DocumentActivity` remains as bounded accountability data and contains no deleted file content or full document metadata.
+
+**Rationale**
+- Matches the stakeholder out-of-scope soft-delete/trash decision and approved clarification.
+- Retains enough evidence for administrator audit reporting.
 
 ## Decision 7: Model project teams through existing project membership roles
 

@@ -16,6 +16,7 @@ This feature is integrated into Blazor Server rather than exposing a separate RE
 - `contentType: string`
 - `fileStream: Stream`
 - `fileSizeBytes: long`
+- `scanService: IMalwareScanService` is resolved by the application and is not caller-supplied
 
 **Preconditions**
 - User is authenticated.
@@ -26,6 +27,8 @@ This feature is integrated into Blazor Server rather than exposing a separate RE
 - If project-scoped, user is the project manager or a project member.
 - If task-scoped, task belongs to the project and the user is authorized for that project.
 - `taskId` is optional and personal-document task associations are rejected.
+- The file is submitted to the provider-neutral local malware scan hook before storage.
+- Batch uploads are processed independently and return one result for each file.
 
 **Result**
 - Returns `Document` with a generated integer ID and GUID-based storage path.
@@ -38,6 +41,25 @@ This feature is integrated into Blazor Server rather than exposing a separate RE
 - Database persistence and `Upload` audit creation happen in one database transaction.
 - If the database save fails after storage succeeds, delete the generated file. Return no success and retain no document/audit row.
 - If compensating deletion fails, surface the operation failure and record the path plus failure for cleanup retry; do not report success.
+- If the scan is unavailable, failed, threat-detected, errored, or indeterminate, reject the file before storage and return no file/document success.
+- Valid files in a mixed batch remain successful even when other files fail validation or scanning.
+
+## IMalwareScanService
+
+**Input**
+- `fileName: string`
+- `contentType: string`
+- `fileStream: Stream`
+
+**Result**
+- Returns a provider-neutral result containing `Clean`, `ThreatFound`, `Unavailable`, `Error`, or `Indeterminate`, scanner name, UTC timestamp, and bounded details.
+
+**Precondition**
+- The scan hook is available and the input stream is positioned for reading.
+
+**Failure**
+- Any outcome other than `Clean` is fail-closed and blocks storage.
+- An unavailable or errored hook is not considered an implementation failure that may still allow upload.
 
 ## SearchDocumentsAsync
 
@@ -123,6 +145,9 @@ This feature is integrated into Blazor Server rather than exposing a separate RE
 - Creates a share record and an in-app notification for each recipient.
 - Records a `Share` DocumentActivity event.
 
+**Upload notification rule**
+- After a project document upload succeeds, create one in-app notification for each eligible project member, excluding the uploader.
+
 **Failure**
 - Rejects personal-document, missing-project, unknown-user, or out-of-project team/user shares.
 
@@ -136,7 +161,7 @@ This feature is integrated into Blazor Server rather than exposing a separate RE
 - Requester is owner or project manager.
 
 **Result**
-- Marks the document deleted, records `Delete`, and invalidates the physical file.
+- Permanently removes the document record and physical file, records a bounded `Delete` audit event, and prevents direct retrieval.
 
 **Failure**
 - Unknown or unauthorized document is false/no-op and is not exposed as existence information.

@@ -13,7 +13,7 @@ Verify the new feature works in the existing ContosoDashboard application withou
 
 ## Validation Steps
 
-1. From the repository root, run `dotnet test ContosoDashboard.sln` and confirm the existing and document tests pass.
+1. From the repository root, run `dotnet test ContosoDashboard.Tests/ContosoDashboard.Tests.csproj` and confirm the existing and document tests pass.
 2. Run `dotnet run --project ContosoDashboard/ContosoDashboard.csproj`.
 3. Open the local HTTPS URL and log in as a seeded user.
 4. Navigate to `/documents`.
@@ -29,6 +29,12 @@ Verify the new feature works in the existing ContosoDashboard application withou
 14. Preview a PDF/image and download an authorized Office/text file.
 15. Edit metadata, replace the file, and delete the document; confirm audit activity and that old file data is removed or unreachable.
 16. Open the dashboard/task context and confirm recent/associated documents respect the same authorization.
+17. Submit a batch containing at least one valid and one invalid file; confirm valid files persist independently and invalid files receive individual rejection results.
+18. Configure the local malware scan hook as unavailable or failed and confirm no file bytes, document metadata, or success result are created.
+19. Confirm a Clean scan result permits only the approved file types, and a ThreatFound or indeterminate result rejects the file.
+20. Confirm a project upload notification reaches project members except the uploader, and a direct share notification reaches each eligible recipient.
+21. Confirm permanent deletion removes the file and Document row while bounded audit events remain accessible only to authorized reporting.
+22. Open P3 reporting as an administrator and verify uploader, category/MIME, and access-pattern summaries; repeat as a non-administrator and confirm denial.
 
 ## Success Signals
 
@@ -38,3 +44,6 @@ Verify the new feature works in the existing ContosoDashboard application withou
 - UI and service layers remain aligned with existing role permissions.
 - Direct share recipients are project-authorized.
 - Database metadata and local file cleanup remain consistent after success and failure.
+- Mixed batches report valid and invalid files independently.
+- Scan unavailable, failed, threat, or indeterminate outcomes always block upload.
+- P3 audit/reporting access is administrator-only.
