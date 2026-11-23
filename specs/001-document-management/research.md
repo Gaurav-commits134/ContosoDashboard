@@ -23,7 +23,7 @@ The new `Document` model will include a required title, category, associated pro
 
 ## Decision 3: Use an abstraction for storage, not direct file IO in business logic
 
-The implementation will define `IFileStorageService` with methods for upload, delete, download, and URL generation. A training implementation will be `LocalFileStorageService`.
+The implementation will define `IFileStorageService` with methods for upload, delete, and authorized download/preview stream access. A training implementation will be `LocalFileStorageService`. It will not expose public URL generation or file-path query parameters.
 
 **Rationale**
 - Fulfills the migration-ready design requirement from the stakeholder brief.
@@ -55,6 +55,45 @@ Document categories will be stored as strings rather than enums to keep the sche
 
 ## Open Question tracking
 
-- No blocking ambiguities remain for the feature scope.
-- Security expectations are sufficiently specified for the offline MVP.
-- Remaining implementation details will be captured during the design and coding tasks.
+- No unresolved specification question remains.
+- The remaining implementation choices are bounded to the existing stack and are resolved below.
+
+## Decision 7: Model project teams through existing project membership roles
+
+There is no standalone Team aggregate in the current application. Project membership already contains a `Role` label and a project relationship. Direct team shares will therefore resolve the requested team/role label among `ProjectMember` rows for the document's project.
+
+**Rationale**
+- Satisfies the clarified “project-authorized team” rule with the smallest repository-compatible change.
+- Avoids introducing a duplicate team hierarchy that would not be used elsewhere.
+
+**Alternatives considered**
+- A new Team and TeamMember entity: more complete, but broader and unsupported by the current specification and UI.
+- A direct share to every project member: useful but not expressive enough to distinguish a named team.
+
+## Decision 8: Use SQLite for local planning assumptions
+
+The repository is configured for SQLite; LocalDB was not retained in the actual implementation.
+
+**Rationale**
+- Matches `Program.cs`, `appsettings`, and the offline Linux environment.
+- Existing EF Core data contracts remain portable.
+
+## Decision 9: Record document actions in a dedicated audit entity
+
+Uploads, downloads, updates, replacements, deletes, and share events will be represented by `DocumentActivity`, rather than only log output.
+
+**Rationale**
+- Supports FR-015 and administrator access reporting.
+- Keeps audit behavior queryable and associated with the document and acting user.
+
+## Decision 10: Validate types and cleanup transactions explicitly
+
+The service will use the approved extension/MIME pairs defined in the specification. Because MIME can be spoofed by a browser, no upload can rely on MIME alone or accept mismatched pair data. Storage is local and outside web roots.
+
+**Rationale**
+- Meets 25 MB and unsupported-type validation while reducing spoofing risk.
+- Preventing orphaned files or database rows requires compensating cleanup on storage/database failures.
+
+## Decision 11: Keep team shares and all direct identifiers behind service authorization
+
+No Razor or HTTP UI state will determine whether access is permitted. The document service will recalculate project membership and share eligibility for every operation.

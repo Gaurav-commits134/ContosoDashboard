@@ -1,33 +1,39 @@
 # Implementation Plan: Document Management
 
-**Branch**: `001-document-management` | **Date**: 2026-09-14 | **Spec**: [spec.md](spec.md)
+**Branch**: `001-document-management` | **Date**: 2026-11-23 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `/specs/001-document-management/spec.md`
 
 ## Summary
 
-Add secure, role-aware document upload, search, sharing, and management to ContosoDashboard with an offline-friendly local file storage layer and a future Azure-ready storage abstraction. The feature will extend the existing Blazor Server + EF Core architecture by adding document metadata models, a storage service abstraction, authorization checks, a document management UI, and project/task integration.
+Complete the secure, project-aware document-management feature in the existing Blazor Server + EF Core application. The implementation plan uses the repository's current models and services, adds the missing retrieval, sharing, replacement, audit, reporting, and task/dashboard capabilities, and preserves the clarified rule that direct shares may target only users or teams that already belong to the related project.
 
 ## Technical Context
 
 **Language/Version**: C# / .NET 8.0  
-**Primary Dependencies**: ASP.NET Core 8, Blazor Server, Entity Framework Core, Bootstrap 5, LocalDB  
-**Storage**: Local file system under AppData/uploads with EF Core metadata persistence  
-**Testing**: xUnit and component/integration tests (to be added as part of feature work)  
+**Primary Dependencies**: ASP.NET Core 8, Blazor Server, Entity Framework Core 8, Bootstrap 5, SQLite
+**Storage**: Local file system under `AppContext.BaseDirectory/AppData/uploads` with EF Core metadata persistence
+**Testing**: xUnit, EF Core SQLite/in-memory integration tests, and Blazor component tests where practical
 **Target Platform**: Linux development environment; Blazor Server app deployed locally with offline support  
 **Project Type**: Web application  
 **Performance Goals**: Upload under 30 seconds for 25 MB files; document list loads under 2 seconds for 500 documents; search returns in under 2 seconds  
-**Constraints**: Must remain offline-capable, respect mock authentication/authorization, and use integer DocumentId plus text-based categories  
+**Constraints**: Offline-capable; no production authentication claims; integer `DocumentId`; text categories; 25 MB maximum; server-side authorization on every resource operation
 **Scale/Scope**: Single dashboard application used by a small internal team with project-scoped document access
 
 ## Constitution Check
 
-This plan complies with the repository’s principles of minimal layered architecture, security by design, and offline-first behavior:
+### Initial constitution check
 
-- The feature is introduced as a new document capability without replacing the existing auth or project model.
-- Access control is enforced in the service layer and page-level authorization boundaries rather than trusting UI state.
-- Storage is separated behind an abstraction so the current local filesystem implementation can migrate cleanly to Azure Blob Storage later.
-- The solution preserves the existing mock authentication system and role-based permissions model.
-- The feature is scoped to a single application and does not introduce unnecessary infrastructure.
+| Principle / gate | Assessment |
+|---|---|
+| I. Training-First Purpose | Pass. The existing mock authentication is retained and the feature is documented as training-only. |
+| II. Security and Authorization by Design | Pass, subject to implementation. Every document read/write/delete/share operation will authorize against the Document, Project, and ProjectMember records on the server. Direct shares will be rejected unless the target user or project team is already authorized for that project. |
+| III. Offline-First and Replaceable Infrastructure | Pass. SQLite and local filesystem remain the defaults; `IFileStorageService` provides the migration seam. |
+| IV. Simple, Layered Architecture | Pass. Existing Models, Services, Pages, and DbContext boundaries are retained; no new host or broad rewrite. |
+| V. Verifiable Quality | Pass. Existing MVP tests are insufficient for the complete specification, so plan includes focused authorization, lifecycle, and integration tests. |
+
+### Gate result
+
+No unresolved clarification remains. The plan may proceed. Any team-sharing implementation must use existing project membership and role labels rather than introducing a disconnected team subsystem unless the implementation needs to persist a named team, in which case the spec and data model must be updated first.
 
 ## Project Structure
 
@@ -58,6 +64,7 @@ ContosoDashboard/
 │   ├── TaskItem.cs
 │   ├── Document.cs
 │   ├── DocumentShare.cs
+│   ├── DocumentActivity.cs
 │   ├── Notification.cs
 │   └── ...
 ├── Services/
@@ -68,8 +75,8 @@ ContosoDashboard/
 │   ├── DashboardService.cs
 │   ├── IDocumentService.cs
 │   ├── DocumentService.cs
-│   ├── IFileStorageService.cs
-│   └── LocalFileStorageService.cs
+│   ├── FileStorageService.cs
+│   └── DocumentReportingService.cs (if reporting remains in the service layer)
 ├── Pages/
 │   ├── Index.razor
 │   ├── Projects.razor
@@ -84,8 +91,69 @@ ContosoDashboard/
 └── appsettings*.json
 ```
 
-**Structure Decision**: Single Blazor Server application with a new document domain layered into the existing Models, Services, and Pages structure. This keeps scope consistent with the current app and avoids a broader rewrite.
+**Structure Decision**: Single Blazor Server application with the document domain layered into the existing Models, Services, and Pages structure. The plan adds no separate API host. UI actions call authorized application services, and file retrieval is exposed only through an authorized server endpoint or authorized page/download handler.
+
+## Implementation Design
+
+### 1. Data and persistence
+
+- Keep `Document.DocumentId` as an integer key.
+- Preserve text values for `Document.Category` and validate against the six approved categories.
+- Extend `DocumentShare` for project-team shares without adding an unrelated team model: store exactly one nullable recipient, either `UserId` or `TeamRole`. A user recipient MUST be the project manager or a current project member of the document's project. A team role MUST be resolved case-insensitively against `ProjectMember.Role`; it may match the project manager only when the requested role is explicitly `ProjectManager`. A team share may be created only when at least one eligible project recipient resolves. Personal-document shares are not offered.
+- Add `DocumentActivity` for upload, download, delete, share, metadata update, and file replacement events.
+- Add read-only reporting projections for uploader, category/MIME, and access-pattern summaries without introducing a persistent report table.
+- Add unique indexes for active shares and audit-friendly indexes for document activity.
+- Keep soft deletion for `Document`, with permanent physical cleanup attempted after database state is committed or explicitly designed to be compensating-safe.
+
+### 2. Storage and file lifecycle
+
+- Keep `IFileStorageService`/`LocalFileStorageService` as the storage seam.
+- Generate a GUID-based stored name before database metadata is saved.
+- Validate against the approved extension/MIME pairs from the specification, together with non-zero size and the 25 MB limit.
+- Do not accept a path supplied by the caller.
+- Build and save metadata only after file validation; if database save fails, delete the newly written file.
+- Write document metadata and the `Upload` audit activity in one EF Core database transaction. If the database operation fails, call storage deletion for the newly generated path; do not return success or retain metadata/audit rows. If deletion itself fails, record the orphan path and failure for cleanup retry and surface the operation failure.
+- Replacement writes the replacement first, updates metadata and audit state, then removes the old file.
+- Deletion requires owner or project-manager authorization and removes or invalidates both the file and document record consistently.
+
+### 3. Authorization and sharing
+
+- Implement a private/centralized authorization check in `DocumentService` and use it for direct lookup, download, preview, search, update, replace, delete, and share.
+- Owner access includes upload owner only.
+- Project access includes project members and project manager.
+- Direct user shares are additional access only if that user is a member or manager of the document's project.
+- Team shares resolve a project role/team label to project members and are rejected when no authorized recipients resolve.
+- Personal documents have no project and remain owner-only; direct sharing is not offered because the clarified rule requires a related project.
+
+### 4. Search and retrieval
+
+- Search title, description, tags, uploader display name, project name, category, and task association.
+- Compose authorization predicates first, then apply title/category/project/task/uploader filters.
+- Sort by upload date, title, size, or category with bounded page size.
+- Preview/download requires the same service authorization used for UI display.
+- Add no public file URL or URL parameter that bypasses document-ID authorization.
+
+### 5. Dashboard, tasks, reporting
+
+- Add recent documents and document counts to the existing dashboard data/service rather than a separate dashboard subsystem.
+- Include TaskId in document associations and filter task documents through project/task authorization.
+- Add administrator reporting queries for active uploaders, MIME/category counts, and document access patterns. Reporting output must itself remain administrator-only.
+
+### 6. UI
+
+- Extend `Documents.razor` with search, category/project/task filters, preview/download actions, edit/replace, delete confirmation, and share controls.
+- Reuse project/task detail context instead of duplicating document state.
+- Keep clear upload errors and disable repeated submissions.
+- UI visibility is supplemental; all mutations and reads remain protected in services.
+
+## Constitution Re-check After Design
+
+- Training purpose: retained.
+- Server-side authorization: planned as a centralized document service policy.
+- Offline infrastructure: planned with SQLite and local disk only.
+- Small architecture: no new application host or framework.
+- Test coverage: planned for upload, direct-ID access, project access, share recipient eligibility, replacement, deletion, and audit records.
 
 ## Complexity Tracking
 
-No constitution violations were identified for this feature. The implementation is intentionally kept within the current architecture to maintain clarity and reduce risk.
+No unjustified constitution violations were identified. The existing partial implementation is useful MVP foundation, but the plan requires additional work for unimplemented search/retrieval, team and user shares, replacement/update, audit/reporting, and task/dashboard integration.
