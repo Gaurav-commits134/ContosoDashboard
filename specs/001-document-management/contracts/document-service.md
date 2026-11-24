@@ -26,9 +26,11 @@ This feature is integrated into Blazor Server rather than exposing a separate RE
 - Extension/MIME matches one of the approved pairs: PDF, Word (.doc/.docx), Excel (.xls/.xlsx), PowerPoint (.ppt/.pptx), text (.txt), or image (.png/.jpg/.jpeg/.gif). Missing, mismatched, or unsupported MIME information is rejected.
 - If project-scoped, user is the project manager or a project member.
 - If task-scoped, task belongs to the project and the user is authorized for that project.
+- A task-detail upload is permitted only to a project member or project manager and must use the task's project as the document project.
 - `taskId` is optional and personal-document task associations are rejected.
-- The file is submitted to the provider-neutral local malware scan hook before storage.
+- The file is scanned by a functioning provider-neutral local malware scanner before storage. A no-op hook, test fake, or fabricated `Clean` result does not satisfy this precondition; the current MVP has no functioning scanner and remains pending this requirement.
 - Batch uploads are processed independently and return one result for each file.
+- The UI reports progress and an individual success/failure outcome for each file; progress is not evidence that the file has been persisted.
 
 **Result**
 - Returns `Document` with a generated integer ID and GUID-based storage path.
@@ -43,6 +45,25 @@ This feature is integrated into Blazor Server rather than exposing a separate RE
 - If compensating deletion fails, surface the operation failure and record the path plus failure for cleanup retry; do not report success.
 - If the scan is unavailable, failed, threat-detected, errored, or indeterminate, reject the file before storage and return no file/document success.
 - Valid files in a mixed batch remain successful even when other files fail validation or scanning.
+- Test doubles may exercise non-Clean outcomes but cannot be used to claim that the functioning-scanner prerequisite is met.
+
+## IFileStorageService.GetUrlAsync
+
+**Signature**
+- `Task<string> GetUrlAsync(string filePath, TimeSpan expiration)`
+
+**Input**
+- `filePath: string`
+- `expiration: TimeSpan`
+
+**Precondition**
+- The caller has already authorized the requesting user for the document through the document service.
+
+**Result**
+- Returns only a location that is served through a protected server handler which rechecks document authorization. A local path or public unauthenticated file URL must never be exposed.
+
+**Failure**
+- Unknown paths and unauthorized documents return no usable location and disclose no file existence.
 
 ## IMalwareScanService
 
@@ -70,11 +91,13 @@ This feature is integrated into Blazor Server rather than exposing a separate RE
 - optional category
 - optional project ID
 - optional task ID
+- optional upload-date range start/end
 - sort field and bounded page
 
 **Result**
-- Authorized documents only: owner, project member/manager, or explicit user share.
+- Authorized documents only: owner, project member/manager, matching-Department Team Lead for team-member uploads, administrator, or eligible explicit user share.
 - Direct team shares expand to the authorized project members.
+- Date-range bounds are validated and applied after authorization predicates.
 
 ## GetDocumentByIdAsync
 
@@ -84,7 +107,18 @@ This feature is integrated into Blazor Server rather than exposing a separate RE
 
 **Result**
 - Returns `Document` only when the centralized authorization policy permits access.
+- Team Lead authorization uses the authenticated Team Lead role and matching Department claim. Administrator access covers all documents. Neither role makes an otherwise unauthorized user eligible for a direct share.
 - Unknown or unauthorized IDs return no document (no existence disclosure).
+
+## GetSharedWithMeAsync
+
+**Input**
+- `requestingUserId: int`
+- optional bounded page/sort
+
+**Result**
+- Returns only explicitly shared documents whose recipient and related project authorization are still valid for the requesting user.
+- Unknown, revoked, or out-of-project shares are omitted without revealing document existence.
 
 ## DownloadDocumentAsync / PreviewDocumentAsync
 
@@ -106,7 +140,7 @@ This feature is integrated into Blazor Server rather than exposing a separate RE
 - document ID, requesting user ID, title, description, category, tags, and optional project/task association.
 
 **Precondition**
-- Requester is the document owner or project manager for the document's project.
+- Requester is the document owner, project manager for the document's project, the Team Lead for the uploader's Department, or an administrator; any project/task destination must also be authorized.
 - If project/task association changes, requester is authorized for the destination project/task.
 
 **Result**
@@ -136,7 +170,7 @@ This feature is integrated into Blazor Server rather than exposing a separate RE
 - optional reason
 
 **Precondition**
-- Requester is owner or project manager.
+- Requester is owner, project manager, the Team Lead for the uploader's Department, or an administrator.
 - The document is project-associated.
 - A user recipient is the project manager or a current project member.
 - A team recipient resolves to at least one project member or project-manager role with the requested role.
@@ -158,13 +192,14 @@ This feature is integrated into Blazor Server rather than exposing a separate RE
 - `requestingUserId: int`
 
 **Precondition**
-- Requester is owner or project manager.
+- Requester is owner, project manager, the Team Lead for the uploader's Department, or an administrator.
 
 **Result**
 - Permanently removes the document record and physical file, records a bounded `Delete` audit event, and prevents direct retrieval.
 
 **Failure**
 - Unknown or unauthorized document is false/no-op and is not exposed as existence information.
+- Permanent deletion does not delete the bounded audit event or leave a soft-delete row.
 
 ## GetDocumentReportAsync
 
